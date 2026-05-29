@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSE Chat Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161820;
+    --surface2: #1e2130;
+    --border: #2a2d3e;
+    --border-active: #3d4260;
+    --accent: #5b8af0;
+    --accent-dim: #2a3a6b;
+    --text: #e4e6f0;
+    --text-muted: #6b7094;
+    --text-dim: #3d4260;
+    --green: #4ade80;
+    --green-dim: #1a3d28;
+    --red: #f87171;
+    --red-dim: #3d1a1a;
+    --amber: #fbbf24;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Noto Sans SC', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 300;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 顶部栏 */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .topbar-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: .04em;
+  }
+  .topbar-title span { color: var(--accent); }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background .3s;
+  }
+  .status-dot.connected { background: var(--green); }
+  .status-dot.streaming {
+    background: var(--amber);
+    animation: pulse 1s infinite;
+  }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: .3; }
+  }
+  .status-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: -6px;
+  }
+
+  .topbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .endpoint-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    width: 220px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .endpoint-input:focus { border-color: var(--border-active); }
+
+  .btn-clear {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-clear:hover { border-color: var(--border-active); color: var(--text); }
+
+  /* 消息区 */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
+  }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .msg {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    animation: fadeUp .2s ease;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .msg.user { flex-direction: row-reverse; }
+
+  .avatar {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .avatar.user-av { background: var(--accent-dim); color: var(--accent); }
+  .avatar.ai-av { background: var(--green-dim); color: var(--green); }
+
+  .bubble {
+    max-width: 70%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user .bubble {
+    background: var(--accent-dim);
+    border: 1px solid #3a4f8a;
+    color: #c5d4ff;
+    border-radius: 10px 2px 10px 10px;
+  }
+  .msg.ai .bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 2px 10px 10px 10px;
+  }
+
+  /* 打字光标 */
+  .cursor {
+    display: inline-block;
+    width: 2px; height: 14px;
+    background: var(--accent);
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink .7s infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* 元信息 */
+  .msg-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    padding: 0 2px;
+  }
+  .msg.user .msg-meta { text-align: right; }
+
+  /* 系统消息 */
+  .sys-msg {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 4px 0;
+  }
+  .sys-msg.err { color: var(--red); }
+
+  /* 底部输入区 */
+  .input-area {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .input-wrap {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color .2s;
+    padding: 2px;
+  }
+  .input-wrap:focus-within { border-color: var(--border-active); }
+
+  textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.6;
+    padding: 9px 12px;
+    max-height: 120px;
+    min-height: 42px;
+  }
+  textarea::placeholder { color: var(--text-dim); }
+
+  .send-btn {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: all .2s;
+    color: #fff;
+  }
+  .send-btn:hover { background: #4a79df; }
+  .send-btn:disabled { background: var(--surface2); cursor: not-allowed; color: var(--text-dim); }
+  .send-btn svg { width: 16px; height: 16px; }
+
+  /* 底部 debug 栏 */
+  .debug-bar {
+    padding: 6px 20px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .debug-bar span { color: var(--text-muted); }
+
+  /* 空状态 */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .empty-icon {
+    width: 40px; height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="status-dot" id="statusDot"></div>
+  <span class="status-label" id="statusLabel">idle</span>
+  <span class="topbar-title">SSE <span>/ stream chat</span> test</span>
+  <div class="topbar-right">
+    <input class="endpoint-input" id="endpointInput" value="/chat/stream" placeholder="/chat/stream" />
+    <button class="btn-clear" onclick="clearMessages()">clear</button>
+  </div>
+</div>
+
+<div class="messages" id="messages">
+  <div class="empty-state" id="emptyState">
+    <div class="empty-icon">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>
+      </svg>
+    </div>
+    <div>发送消息开始测试 SSE 流式输出</div>
+    <div style="color:var(--text-dim);font-size:10px">确保后端已启动，接口路径与上方 endpoint 一致</div>
+  </div>
+</div>
+
+<div class="input-area">
+  <div class="input-row">
+    <div class="input-wrap">
+      <textarea id="msgInput" placeholder="输入消息，Enter 发送，Shift+Enter 换行..." rows="1"></textarea>
+    </div>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<div class="debug-bar">
+  <span>tokens: <span id="dbTokens">—</span></span>
+  <span>chars: <span id="dbChars">0</span></span>
+  <span>elapsed: <span id="dbElapsed">—</span></span>
+  <span>endpoint: <span id="dbEndpoint">/chat/stream</span></span>
+</div>
+
+<script>
+let currentES = null;
+let streamStartTime = null;
+let totalChars = 0;
+
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const statusDot = document.getElementById('statusDot');
+const statusLabel = document.getElementById('statusLabel');
+const emptyState = document.getElementById('emptyState');
+
+function setStatus(s) {
+  statusDot.className = 'status-dot ' + s;
+  statusLabel.textContent = s;
+}
+
+function now() {
+  return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function appendSysMsg(text, isErr) {
+  const d = document.createElement('div');
+  d.className = 'sys-msg' + (isErr ? ' err' : '');
+  d.textContent = text;
+  messagesEl.appendChild(d);
+  scrollBottom();
+}
+
+function appendUserMsg(text) {
+  if (emptyState) emptyState.remove();
+  const msg = document.createElement('div');
+  msg.className = 'msg user';
+  msg.innerHTML = `
+    <div>
+      <div class="bubble">${escHtml(text)}</div>
+      <div class="msg-meta">${now()}</div>
+    </div>
+    <div class="avatar user-av">ME</div>`;
+  messagesEl.appendChild(msg);
+  scrollBottom();
+}
+
+function createAiMsg() {
+  const msg = document.createElement('div');
+  msg.className = 'msg ai';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  cursor.id = 'streamCursor';
+  bubble.appendChild(cursor);
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.id = 'aiMsgMeta';
+  meta.textContent = now() + ' · streaming...';
+  const av = document.createElement('div');
+  av.className = 'avatar ai-av';
+  av.textContent = 'AI';
+  msg.appendChild(av);
+  const wrap = document.createElement('div');
+  wrap.appendChild(bubble);
+  wrap.appendChild(meta);
+  msg.appendChild(wrap);
+  messagesEl.appendChild(msg);
+  scrollBottom();
+  return { bubble, cursor, meta };
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function scrollBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  if (currentES) { currentES.close(); currentES = null; }
+
+  const endpoint = document.getElementById('endpointInput').value.trim() || '/chat/stream';
+  document.getElementById('dbEndpoint').textContent = endpoint;
+
+  appendUserMsg(text);
+  inputEl.value = '';
+  autoResize();
+  sendBtn.disabled = true;
+  setStatus('streaming');
+  streamStartTime = Date.now();
+
+  const url = endpoint + '?msg=' + encodeURIComponent(text);
+  const { bubble, cursor, meta } = createAiMsg();
+  let content = '';
+
+  const es = new EventSource(url);
+  currentES = es;
+
+  es.onopen = () => {
+    setStatus('connected');
+  };
+
+  es.onmessage = (e) => {
+    // 过滤结束标记
+    if (e.data === '[DONE]' || e.data === '') return;
+
+    console.log('event received:', JSON.stringify(e.data));
+
+    content += e.data;
+    totalChars += e.data.length;
+
+    // 在 cursor 前插入文字
+    bubble.insertBefore(document.createTextNode(e.data), cursor);
+    scrollBottom();
+
+    const elapsed = ((Date.now() - streamStartTime) / 1000).toFixed(1);
+    document.getElementById('dbElapsed').textContent = elapsed + 's';
+    document.getElementById('dbChars').textContent = totalChars;
+  };
+
+  // 支持自定义事件名（有些后端用 event: message）
+  es.addEventListener('message', (e) => {});
+
+  es.onerror = (e) => {
+    es.close();
+    currentES = null;
+    cursor.remove();
+    // 流正常结束时 EventSource 也会触发 error（连接关闭），用内容长度区分
+    if (content.length > 0) {
+      setStatus('connected');
+      const elapsed = ((Date.now() - streamStartTime) / 1000).toFixed(1);
+      meta.textContent = now() + ' · ' + content.length + ' chars · ' + elapsed + 's';
+      document.getElementById('dbElapsed').textContent = elapsed + 's';
+    } else {
+      setStatus('error');
+      meta.textContent = now() + ' · 连接失败';
+      appendSysMsg('× 连接失败：确认后端已启动，且接口支持 SSE（text/event-stream）', true);
+    }
+    sendBtn.disabled = false;
+  };
+
+  inputEl.value = '';
+}
+
+function clearMessages() {
+  messagesEl.innerHTML = '';
+  totalChars = 0;
+  document.getElementById('dbChars').textContent = '0';
+  document.getElementById('dbElapsed').textContent = '—';
+  const empty = document.createElement('div');
+  empty.className = 'empty-state';
+  empty.id = 'emptyState';
+  empty.innerHTML = `
+    <div class="empty-icon">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>
+      </svg>
+    </div>
+    <div>发送消息开始测试 SSE 流式输出</div>
+    <div style="color:var(--color-dim);font-size:10px">确保后端已启动，接口路径与上方 endpoint 一致</div>`;
+  messagesEl.appendChild(empty);
+  setStatus('idle');
+}
+
+// textarea 自适应高度
+function autoResize() {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+}
+inputEl.addEventListener('input', autoResize);
+
+// Enter 发送，Shift+Enter 换行
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// endpoint 输入同步到 debug 栏
+document.getElementById('endpointInput').addEventListener('input', (e) => {
+  document.getElementById('dbEndpoint').textContent = e.target.value || '/chat/stream';
+});
+</script>
+</body>
+</html>
