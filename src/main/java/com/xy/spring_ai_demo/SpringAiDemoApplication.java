@@ -20,7 +20,7 @@ public class SpringAiDemoApplication {
 		SpringApplication.run(SpringAiDemoApplication.class, args);
 	}
 
-	@Bean
+	/*@Bean
 	public CommandLineRunner runner(ChatClient.Builder builder) {
 		return args -> {
 			EncodingRegistry registry = Encodings.newLazyEncodingRegistry();
@@ -45,5 +45,5 @@ public class SpringAiDemoApplication {
 			System.out.printf("Response tokens: %d%n", responseTokens);
 			System.out.printf("Total tokens   : %d%n", promptTokens + responseTokens);
 		};
-	}
+	}*/
 }
